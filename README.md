@@ -2,7 +2,22 @@
 
 Živá kvízová hra: hostiteľ vytvorí kvíz a zobrazí PIN, hráči sa pripoja z mobilov a odpovedajú v reálnom čase.
 
-## Spustenie
+## Verejná hra cez internet (Render.com, zadarmo)
+
+Aplikácia nahraná na hosting dostane vlastnú adresu (napr. `https://moj-kviz.onrender.com`), ktorú otvorí hocikto.
+
+1. Vytvor si bezplatný účet na **github.com** a nový repozitár (napr. `kviz-live`). Klikni „uploading an existing file“ a nahraj **obsah rozbaleného priečinka** (server.js, package.json, public, test, README.md). Priečinok `node_modules` nenahrávaj.
+2. Vytvor si bezplatný účet na **render.com** (prihlásiť sa dá cez GitHub).
+3. V Renderi: **New → Web Service**, vyber repozitár `kviz-live`.
+4. Vyplň: **Language** `Node`, **Build Command** `npm install`, **Start Command** `npm start`, **Instance Type** `Free`.
+5. Klikni **Create Web Service**. Po pár minútach dostaneš adresu `https://…onrender.com`.
+6. Hostiteľ otvorí `https://…onrender.com/host.html`, hráči `https://…onrender.com`.
+
+Obmedzenia bezplatného plánu:
+- Po 15 minútach bez prevádzky sa služba uspí a prebúdzanie trvá okolo minúty. **Otvor adresu pár minút pred hrou.**
+- Pri uspatí alebo novom nasadení sa zrušia rozbehnuté hry (sú len v pamäti).
+
+## Spustenie na vlastnom počítači
 
 ```bash
 npm install
@@ -11,8 +26,8 @@ npm start
 
 Server beží na `http://localhost:3000` (port zmeníš premennou `PORT`).
 
-- **Hostiteľ:** otvor `/host.html` (editor kvízu, uloží sa do prehliadača), klikni „Spustiť hru“.
-- **Hráči:** otvoria `/`, zadajú PIN a prezývku. Na jednej Wi-Fi použi IP adresu počítača, napr. `http://192.168.1.20:3000`.
+- **Hostiteľ:** `/host.html` (editor kvízu, uloží sa do prehliadača), klikni „Spustiť hru“.
+- **Hráči:** `/`, zadajú PIN a prezývku. Na jednej Wi-Fi použi IP adresu počítača, napr. `http://192.168.1.20:3000`.
 
 ## Ako hra funguje
 
@@ -28,8 +43,3 @@ Server beží na `http://localhost:3000` (port zmeníš premennou `PORT`).
 - `public/index.html` – obrazovka hráča
 - `public/style.css` – spoločné štýly
 - `test/smoke.js` – automatický test (`npm test`)
-
-## Poznámky
-
-- Hry sú len v pamäti servera; po reštarte zanikajú. Pri odpojení hostiteľa sa hra ukončí.
-- Pre nasadenie na internet stačí hocijaký hosting s Node.js a podporou WebSocketov.

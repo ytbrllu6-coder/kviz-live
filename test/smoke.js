@@ -18,7 +18,7 @@ async function run() {
   await sleep(800);
   const quiz = { title: 'T', questions: [
     { text: 'Q1', answers: ['a', 'b', 'c', 'd'], correct: 1, time: 10 },
-    { text: 'Q2', answers: ['a', 'b'], correct: 0, time: 10 },
+    { type: 'tf', text: 'Q2', correct: 0, time: 10 },
   ] };
   const host = io(URL), p1 = io(URL), p2 = io(URL);
   await Promise.all([once(host, 'connect'), once(p1, 'connect'), once(p2, 'connect')]);
@@ -47,9 +47,10 @@ async function run() {
   check(h1.counts[1] === 1 && h1.counts[0] === 1 && !h1.isLast, 'Hostiteľ vidí počty odpovedí');
 
   // Otázka 2 (posledná)
-  q = once(host, 'question:start');
+  q = once(p1, 'question:start');
   host.emit('host:next');
-  await q;
+  const q2 = await q;
+  check(q2.type === 'tf' && q2.text === 'Q2' && q2.answers.join() === 'Pravda,Nepravda', 'Hráč dostane text a odpovede otázky Pravda/Nepravda');
   const end2 = once(host, 'question:end');
   p1.emit('player:answer', { choice: 0 });
   p2.emit('player:answer', { choice: 0 });

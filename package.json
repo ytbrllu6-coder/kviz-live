@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Kahoot-like živá kvízová aplikácia",
   "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node test/smoke.js"

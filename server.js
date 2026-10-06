@@ -25,14 +25,19 @@ function sanitizeQuiz(quiz) {
   const questions = [];
   for (const x of quiz.questions.slice(0, 50)) {
     const text = String((x && x.text) || '').trim().slice(0, 200);
+    const time = Math.min(120, Math.max(5, Number(x && x.time) || 20));
+    if (x && x.type === 'tf') {
+      if (!text) return null;
+      questions.push({ type: 'tf', text, answers: ['Pravda', 'Nepravda'], correct: Number(x.correct) === 1 ? 1 : 0, time });
+      continue;
+    }
     const raw = ((x && x.answers) || []).slice(0, 4).map(a => String(a).trim().slice(0, 100));
     const keep = [];
     raw.forEach((t, i) => { if (t) keep.push(i); });
     const answers = keep.map(i => raw[i]);
     const correct = keep.indexOf(Number(x && x.correct));
     if (!text || answers.length < 2 || correct < 0) return null;
-    const time = Math.min(120, Math.max(5, Number(x.time) || 20));
-    questions.push({ text, answers, correct, time });
+    questions.push({ type: 'mc', text, answers, correct, time });
   }
   return { title: String(quiz.title || 'Kvíz').trim().slice(0, 100), questions };
 }
@@ -72,6 +77,7 @@ function startQuestion(g) {
   const payload = {
     index: g.index,
     total: g.quiz.questions.length,
+    type: q.type,
     text: q.text,
     answers: q.answers,
     time: q.time,

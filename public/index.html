@@ -48,7 +48,8 @@ function renderWait(title, sub) {
 
 socket.on('question:start', d => {
   screen(`<div>Otázka ${d.index + 1} / ${d.total}</div>
-    <div class="pgrid">${d.answers.map((a, i) => `
+    <div class="q-player">${esc(d.text)}</div>
+    <div class="pgrid ${d.type === 'tf' ? 'tf' : ''}">${d.answers.map((a, i) => `
       <button class="pbtn c${i}" data-i="${i}"><span class="shape">${SHAPES[i]}</span><span>${esc(a)}</span></button>`).join('')}
     </div>`);
   app.querySelectorAll('.pbtn').forEach(b => b.addEventListener('click', () => {
