@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kvíz – Pripoj sa</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app" class="center"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const SHAPES = ['▲', '◆', '●', '■'];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const app = document.getElementById('app');
+const socket = io();
+let myName = '';
+
+function screen(html, cls = '') {
+  app.className = 'center ' + cls;
+  app.innerHTML = html;
+}
+
+function renderJoin(err) {
+  const pin = new URLSearchParams(location.search).get('pin') || '';
+  screen(`<h1>Kvíz</h1>
+    <form class="join-box" id="f">
+      <input type="text" id="pin" inputmode="numeric" maxlength="6" placeholder="PIN hry" value="${esc(pin)}" autocomplete="off">
+      <input type="text" id="name" maxlength="20" placeholder="Tvoja prezývka" autocomplete="off">
+      <button class="btn" style="background:#222;color:#fff">Pripojiť sa</button>
+      ${err ? `<div class="err">${esc(err)}</div>` : ''}
+    </form>`);
+  document.getElementById('f').addEventListener('submit', e => {
+    e.preventDefault();
+    const pin = document.getElementById('pin').value.trim();
+    const name = document.getElementById('name').value.trim();
+    socket.emit('player:join', { pin, name }, res => {
+      if (!res.ok) return renderJoin(res.error);
+      myName = res.name;
+      renderWait(`Si v hre, ${esc(myName)}!`, 'Čakaj na začiatok…');
+    });
+  });
+}
+
+function renderWait(title, sub) {
+  screen(`<div class="big-text">${title}</div><div>${sub || ''}</div>`);
+}
+
+socket.on('question:start', d => {
+  screen(`<div>Otázka ${d.index + 1} / ${d.total}</div>
+    <div class="pgrid">${d.answers.map((a, i) => `
+      <button class="pbtn c${i}" data-i="${i}"><span class="shape">${SHAPES[i]}</span><span>${esc(a)}</span></button>`).join('')}
+    </div>`);
+  app.querySelectorAll('.pbtn').forEach(b => b.addEventListener('click', () => {
+    socket.emit('player:answer', { choice: +b.dataset.i });
+    renderWait('Odpoveď odoslaná', 'Čakaj na ostatných…');
+  }));
+});
+
+socket.on('question:end', d => {
+  const cls = d.result === 'correct' ? 'ok' : d.result === 'wrong' ? 'bad' : 'none';
+  const title = d.result === 'correct' ? 'Správne! ✔' : d.result === 'wrong' ? 'Nesprávne ✖' : 'Čas vypršal';
+  screen(`<div class="big-text">${title}</div>
+    ${d.result === 'correct' ? `<div class="big-text">+${d.points}</div>` : ''}
+    ${d.streak > 1 ? `<div>🔥 Séria: ${d.streak}</div>` : ''}
+    <div>Poradie: <b>${d.rank}.</b> z ${d.total} &nbsp;|&nbsp; Skóre: <b>${d.score}</b></div>`, 'full ' + cls);
+});
+
+socket.on('game:end', d => {
+  screen(`<div class="big-text">Koniec hry!</div>
+    <div class="big-text">${d.rank}. miesto</div>
+    <div>z ${d.total} hráčov · skóre ${d.score}</div>
+    <button class="btn" onclick="location.reload()">Hrať znova</button>`);
+});
+
+socket.on('game:closed', () => {
+  screen(`<div class="big-text">Hostiteľ ukončil hru</div>
+    <button class="btn" onclick="location.reload()">Späť</button>`);
+});
+
+socket.on('disconnect', () => {
+  screen(`<div class="big-text">Spojenie prerušené</div>
+    <button class="btn" onclick="location.reload()">Pripojiť znova</button>`);
+});
+
+renderJoin();
+</script>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kvíz – Hostiteľ</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const SHAPES = ['▲', '◆', '●', '■'];
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const app = $('#app');
+let socket = null, pin = null, timerInt = null;
+let quiz = loadQuiz();
+
+function defaultQuiz() {
+  return { title: 'Ukážkový kvíz', questions: [
+    { text: 'Aké je hlavné mesto Slovenska?', answers: ['Bratislava', 'Košice', 'Žilina', 'Prešov'], correct: 0, time: 20 },
+    { text: 'Koľko je 7 × 8?', answers: ['54', '56', '63', '48'], correct: 1, time: 15 },
+    { text: 'Ktorá planéta je najbližšie k Slnku?', answers: ['Venuša', 'Zem', 'Merkúr', 'Mars'], correct: 2, time: 20 }
+  ] };
+}
+function loadQuiz() {
+  try {
+    const q = JSON.parse(localStorage.getItem('quiz'));
+    if (q && Array.isArray(q.questions) && q.questions.length) return q;
+  } catch (e) {}
+  return defaultQuiz();
+}
+function saveQuiz() { try { localStorage.setItem('quiz', JSON.stringify(quiz)); } catch (e) {} }
+
+/* ---------- Editor kvízu ---------- */
+function renderBuilder(err) {
+  clearInterval(timerInt);
+  app.innerHTML = `<div class="wrap">
+    <h1>Vytvor kvíz</h1>
+    <input type="text" id="title" class="title-in" value="${esc(quiz.title)}" placeholder="Názov kvízu">
+    <div>${quiz.questions.map((q, i) => `
+      <div class="card" data-i="${i}">
+        <div class="row between"><b>Otázka ${i + 1}</b><button class="link" data-act="del">Odstrániť</button></div>
+        <input type="text" class="q-text" data-f="text" value="${esc(q.text)}" placeholder="Text otázky">
+        <div class="ans-grid">${q.answers.map((a, j) => `
+          <div class="ans c${j}">
+            <span class="shape">${SHAPES[j]}</span>
+            <input type="text" data-f="a${j}" value="${esc(a)}" placeholder="Odpoveď ${j + 1}">
+            <input type="radio" name="c${i}" data-f="correct" value="${j}" ${q.correct === j ? 'checked' : ''} title="Správna odpoveď">
+          </div>`).join('')}
+        </div>
+        <div class="row">Čas na odpoveď:
+          <select data-f="time">${[10, 15, 20, 30, 45, 60, 90].map(t => `<option value="${t}" ${q.time === t ? 'selected' : ''}>${t} s</option>`).join('')}</select>
+          <small>(označ kruhom správnu odpoveď)</small>
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="row"><button class="btn ghost" id="add">+ Pridať otázku</button></div>
+    ${err ? `<p class="err">${esc(err)}</p>` : ''}
+    <div class="row"><button class="btn big" id="go">Spustiť hru</button></div>
+  </div>`;
+}
+
+function onEdit(e) {
+  const t = e.target;
+  if (t.id === 'title') { quiz.title = t.value; saveQuiz(); return; }
+  const card = t.closest('.card');
+  if (!card || !t.dataset.f) return;
+  const q = quiz.questions[+card.dataset.i];
+  const f = t.dataset.f;
+  if (f === 'text') q.text = t.value;
+  else if (f === 'correct') q.correct = +t.value;
+  else if (f === 'time') q.time = +t.value;
+  else if (f[0] === 'a') q.answers[+f[1]] = t.value;
+  saveQuiz();
+}
+app.addEventListener('input', onEdit);
+app.addEventListener('change', onEdit);
+
+app.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.id === 'add') {
+    quiz.questions.push({ text: '', answers: ['', '', '', ''], correct: 0, time: 20 });
+    saveQuiz(); renderBuilder(); window.scrollTo(0, document.body.scrollHeight);
+  } else if (b.dataset.act === 'del') {
+    if (quiz.questions.length > 1) {
+      quiz.questions.splice(+b.closest('.card').dataset.i, 1);
+      saveQuiz(); renderBuilder();
+    }
+  } else if (b.id === 'go') startHost();
+  else if (b.id === 'start') socket.emit('host:start');
+  else if (b.id === 'skip') socket.emit('host:showResults');
+  else if (b.id === 'next') socket.emit('host:next');
+  else if (b.id === 'again') { if (socket) socket.disconnect(); socket = null; renderBuilder(); }
+});
+
+function validate() {
+  for (const [i, q] of quiz.questions.entries()) {
+    if (!q.text.trim()) return `Otázka ${i + 1} nemá text.`;
+    if (q.answers.filter(a => a.trim()).length < 2) return `Otázka ${i + 1} potrebuje aspoň 2 odpovede.`;
+    if (!q.answers[q.correct].trim()) return `Otázka ${i + 1}: správna odpoveď je prázdna.`;
+  }
+  return null;
+}
+
+/* ---------- Hra ---------- */
+function startHost() {
+  const err = validate();
+  if (err) return renderBuilder(err);
+  socket = io();
+  socket.emit('host:create', { quiz }, res => {
+    if (!res.ok) return renderBuilder(res.error);
+    pin = res.pin;
+    renderLobby([]);
+  });
+  socket.on('lobby:update', renderLobby);
+  socket.on('question:start', renderQuestion);
+  socket.on('question:count', c => { const el = $('#cnt'); if (el) el.textContent = `${c.answered} / ${c.total}`; });
+  socket.on('question:end', renderResults);
+  socket.on('game:end', renderFinal);
+}
+
+function renderLobby(players) {
+  app.innerHTML = `<div class="center">
+    <h2>${esc(quiz.title)}</h2>
+    <div>Otvor <b>${esc(location.host)}</b> a zadaj PIN:</div>
+    <div class="pin">${pin}</div>
+    <div class="chips">${players.map(n => `<span class="chip">${esc(n)}</span>`).join('') || '<i>Čakám na hráčov…</i>'}</div>
+    <div>Hráčov: ${players.length}</div>
+    <button class="btn big" id="start" ${players.length ? '' : 'disabled'}>Štart</button>
+  </div>`;
+}
+
+function renderQuestion(d) {
+  clearInterval(timerInt);
+  const end = Date.now() + d.time * 1000;
+  app.innerHTML = `<div class="center">
+    <div class="row between" style="width:min(1000px,100%)">
+      <div>Otázka ${d.index + 1} / ${d.total}</div>
+      <div class="timer" id="time">${d.time}</div>
+      <div>Odpovedalo: <b id="cnt">0</b></div>
+    </div>
+    <div class="q-big">${esc(d.text)}</div>
+    <div class="host-grid">${d.answers.map((a, i) => `<div class="host-ans c${i}"><span class="shape">${SHAPES[i]}</span>${esc(a)}</div>`).join('')}</div>
+    <button class="btn ghost" id="skip">Preskočiť čas</button>
+  </div>`;
+  timerInt = setInterval(() => {
+    const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+    const el = $('#time');
+    if (el) el.textContent = left;
+    if (!left) clearInterval(timerInt);
+  }, 250);
+}
+
+function renderResults(d) {
+  clearInterval(timerInt);
+  const max = Math.max(1, ...d.counts);
+  app.innerHTML = `<div class="center">
+    <h2>Výsledky otázky</h2>
+    <div class="bars">${d.counts.map((c, i) => `
+      <div class="bar-col">
+        <div>${c}${i === d.correct ? ' ✔' : ''}</div>
+        <div class="bar c${i} ${i === d.correct ? '' : 'dim'}" style="height:${Math.round(c / max * 85)}%"></div>
+        <div class="shape">${SHAPES[i]}</div>
+      </div>`).join('')}
+    </div>
+    <h3>Rebríček</h3>
+    <div class="board">${d.leaderboard.map(p => `<div class="board-row"><span>${p.rank}. ${esc(p.name)}</span><span>${p.score}</span></div>`).join('')}</div>
+    <button class="btn big" id="next">${d.isLast ? 'Zobraziť výsledky' : 'Ďalej'}</button>
+  </div>`;
+}
+
+function renderFinal(board) {
+  const top = board.slice(0, 3);
+  const order = [top[1], top[0], top[2]].filter(Boolean);
+  app.innerHTML = `<div class="center">
+    <h1>Koniec hry!</h1>
+    <div class="podium">${order.map(p => `<div style="height:${p.rank === 1 ? 100 : p.rank === 2 ? 75 : 55}%">${p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : '🥉'}<br>${esc(p.name)}<br>${p.score}</div>`).join('')}</div>
+    <div class="board">${board.slice(3).map(p => `<div class="board-row"><span>${p.rank}. ${esc(p.name)}</span><span>${p.score}</span></div>`).join('')}</div>
+    <button class="btn" id="again">Nová hra</button>
+  </div>`;
+}
+
+renderBuilder();
+</script>
+</body>
+</html>
